@@ -1,0 +1,92 @@
+package dev.yourname.addon;
+
+import meteordevelopment.meteorclient.addons.MeteorAddon;
+import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Category;
+import meteordevelopment.meteorclient.utils.player.Rotations;
+import meteordevelopment.orbit.EventHandler;
+import meteordevelopment.meteorclient.events.world.TickEvent;
+
+import baritone.api.BaritoneAPI;
+import baritone.api.pathing.goals.Goal;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.decoration.ArmorStandEntity; // 假設 interaction 是盔甲架類型
+
+public class FaceBaritoneInteractionAddon extends MeteorAddon {
+    public static final Category CATEGORY = new Category("BaritoneTools");
+
+    @Override
+    public void onInitialize() {
+        MODULES.add(new FaceBaritoneInteraction());
+    }
+
+    @Override
+    public void onRegisterCategories() {
+        MODULE_CATEGORIES.add(CATEGORY);
+    }
+
+    public static class FaceBaritoneInteraction extends Module {
+        private static final float SMOOTH_FACTOR = 0.2f;
+
+        public FaceBaritoneInteraction() {
+            super(CATEGORY, "face-baritone-interaction", "跟著路徑旋轉並面向 interaction");
+        }
+
+        @EventHandler
+        private void onTick(TickEvent.Pre event) {
+            if (mc.player == null || mc.world == null) return;
+
+            // 取得 Baritone 的目標座標
+            Goal goal = BaritoneAPI.getProvider().getPrimaryBaritone().getCustomGoalProcess().getGoal();
+            if (goal == null) return;
+
+            BlockPos goalPos = goal.getGoalPos();
+            if (goalPos == null) return;
+
+            // 預設旋轉目標是 Baritone 路徑座標
+            double targetX = goalPos.getX() + 0.5;
+            double targetY = goalPos.getY() + 0.5;
+            double targetZ = goalPos.getZ() + 0.5;
+
+            // 尋找最近的 interaction 實體（這裡假設是 ArmorStand，需依伺服器實際類型調整）
+            Entity nearestInteraction = null;
+            double nearestDist = Double.MAX_VALUE;
+
+            for (Entity e : mc.world.getEntities()) {
+                // 判斷是否為 interaction（這裡用 ArmorStand 作為範例）
+                if (e instanceof ArmorStandEntity && e.getCustomName() != null && e.getCustomName().getString().contains("interaction")) {
+                    double dist = mc.player.squaredDistanceTo(e);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        nearestInteraction = e;
+                    }
+                }
+            }
+
+            // 如果找到 interaction 就面向它，否則面向 Baritone 目標座標
+            if (nearestInteraction != null) {
+                targetX = nearestInteraction.getX();
+                targetY = nearestInteraction.getY() + nearestInteraction.getHeight() / 2; // 盔甲架中心
+                targetZ = nearestInteraction.getZ();
+            }
+
+            double dx = targetX - mc.player.getX();
+            double dy = targetY - (mc.player.getY() + mc.player.getEyeHeight(mc.player.getPose()));
+            double dz = targetZ - mc.player.getZ();
+
+            float yaw = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90F);
+            float pitch = (float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
+
+            // 平滑旋轉
+            float smoothYaw = mc.player.getYaw() + (yaw - mc.player.getYaw()) * SMOOTH_FACTOR;
+            float smoothPitch = mc.player.getPitch() + (pitch - mc.player.getPitch()) * SMOOTH_FACTOR;
+
+            // 微小隨機抖動
+            smoothYaw += (Math.random() - 0.5) * 0.5;
+            smoothPitch += (Math.random() - 0.5) * 0.5;
+
+            Rotations.rotate(smoothYaw, smoothPitch);
+        }
+    }
+}
